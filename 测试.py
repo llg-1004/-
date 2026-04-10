@@ -1875,7 +1875,7 @@ def show_homepage():
     with col1:
         st.markdown("# 舆情风险监控系统")
     with col2:
-        update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        update_time = __import__('datetime').datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.markdown(f"<p style='text-align:right; margin-top:20px;'>更新时间：{update_time}</p>", unsafe_allow_html=True)
     st.markdown("---")
     with st.expander("⚡ 快速开始", expanded=True):
