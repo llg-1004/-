@@ -378,7 +378,7 @@ def show_daily_sentiment_module():
     st.subheader("📈 趋势统计模块")
     df = load_all_daily_sentiment_data()
     if df.empty:
-st.warning("未读取到任何每日舆情数据，请检查路径：./每日打标")
+        st.warning("未读取到任何每日舆情数据，请检查路径：./每日打标")
         return
     required_cols = ["event_day", "二级标签", "三级标签", "交易号", "客诉原文", "main_sku"]
     missing = [c for c in required_cols if c not in df.columns]
