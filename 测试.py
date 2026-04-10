@@ -59,14 +59,22 @@ COLORS = {
 }
 
 # ====================== 每日舆情自动日期路径 ======================
-today_date = datetime.now().strftime("%Y%m%d")
-DAILY_DATA_PATH = rf"E:\Desktop\每日打标\{today_date}_文本处理.xlsx"
-SAVE_ROOT_PATH = "E:\\Desktop\\店铺爬取\\"
-INPUT_FILE_PATH = f"{SAVE_ROOT_PATH}all_trustpilot_reviews.xlsx"
-INTERNAL_FEEDBACK_PATH = f"{SAVE_ROOT_PATH}llg_zk_prod_feedback.xlsx"
-PAYPAL_30D_PATH = f"{SAVE_ROOT_PATH}paypal_complaint_analysis_20260327_100900.xlsx"
-PAYPAL_RISK_PATH = f"{SAVE_ROOT_PATH}风险店铺投诉数据.xlsx"
-SHIPPING_DATA_PATH = f"{SAVE_ROOT_PATH}店铺风险-发货数据-4.8.xlsx"
+# ====================== 【GitHub 云部署专用路径】复制我 ======================
+import datetime
+today_date = datetime.datetime.now().strftime("%Y%m%d")
+
+# 1. 每日打标文件夹（GitHub 上的文件夹）
+DAILY_DATA_PATH = f"./每日打标/{today_date}_文本处理.xlsx"
+
+# 2. 店铺爬取文件夹（GitHub 上的文件夹）
+SAVE_ROOT_PATH = "./店铺爬取/"
+
+# 3. 店铺爬取里的所有文件（固定名字，不要改）
+INPUT_FILE_PATH = SAVE_ROOT_PATH + "all_trustpilot_reviews.xlsx"
+INTERNAL_FEEDBACK_PATH = SAVE_ROOT_PATH + "llg_zk_prod_feedback.xlsx"
+PAYPAL_30D_PATH = SAVE_ROOT_PATH + "paypal_complaint_analysis_20260327_100900.xlsx"
+PAYPAL_RISK_PATH = SAVE_ROOT_PATH + "风险店铺投诉数据.xlsx"
+SHIPPING_DATA_PATH = SAVE_ROOT_PATH + "店铺风险-发货数据-4.8.xlsx"
 
 RISK_KEYWORDS = {
     "物流/发货风险": ["not received", "no delivery", "late", "shipping", "tracking", "never arrived", "delayed",
