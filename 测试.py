@@ -71,7 +71,7 @@ SAVE_ROOT_PATH = "./店铺爬取/"
 # 3. 店铺爬取里的所有文件（固定名字，不要改）
 INPUT_FILE_PATH = SAVE_ROOT_PATH + "all_trustpilot_reviews.xlsx"
 INTERNAL_FEEDBACK_PATH = SAVE_ROOT_PATH + "llg_zk_prod_feedback.xlsx"
-PAYPAL_30D_PATH = SAVE_ROOT_PATH + "paypal_complaint_analysis_2025.xlsx"
+PAYPAL_30D_PATH = SAVE_ROOT_PATH + "paypal_complaint_analysis_20260327_100900.xlsx"
 PAYPAL_RISK_PATH = SAVE_ROOT_PATH + "风险店铺投诉数据.xlsx"
 SHIPPING_DATA_PATH = SAVE_ROOT_PATH + "店铺风险-发货数据-4.8.xlsx"
 
