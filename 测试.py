@@ -255,7 +255,7 @@ def ai_generate_summary(product_name, tag_name, complaints):
 def load_all_daily_sentiment_data():
     import os
     import glob
-folder_path = r"./每日打标"
+    folder_path = r"./每日打标"
     all_files = glob.glob(os.path.join(folder_path, "*.xlsx"))
     if not all_files:
         return pd.DataFrame()
