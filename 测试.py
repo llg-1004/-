@@ -59,7 +59,7 @@ COLORS = {
 }
 
 # ====================== 每日舆情自动日期路径 ======================
-# ====================== 【GitHub 云部署专用路径】复制我 ======================
+
 import datetime
 today_date = datetime.datetime.now().strftime("%Y%m%d")
 
