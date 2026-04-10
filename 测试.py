@@ -75,13 +75,6 @@ PAYPAL_30D_PATH = SAVE_ROOT_PATH + "paypal_complaint_analysis_2025.xlsx"
 PAYPAL_RISK_PATH = SAVE_ROOT_PATH + "风险店铺投诉数据.xlsx"
 SHIPPING_DATA_PATH = SAVE_ROOT_PATH + "店铺风险-发货数据-4.8.xlsx"
 
-RISK_KEYWORDS = {
-    "物流/发货风险": ["not received", "no delivery", "late", "shipping", "tracking", "never arrived", "delayed",
-                      "missing", "lost"],
-    "质量/假货风险": ["fake", "scam", "poor quality", "broken", "not as described", "defective", "garbage",
-                      "counterfeit", "bad quality"],
-    "售后/退款风险": ["no refund", "ignore", "no reply", "worst service", "cheat", "dishonest", "refund denied",
-                      "customer service bad"]
 }
 RISK_THRESHOLDS = {"关键词爆发阈值": 8}
 
@@ -117,33 +110,6 @@ def convert_df_to_excel(df):
         df.to_excel(writer, index=False, sheet_name='数据')
     output.seek(0)
     return output.getvalue()
-
-def generate_data_table_html(df, title, columns=None):
-    if df.empty:
-        return f"<p>暂无 {title} 数据</p>"
-    cols = columns if columns else df.columns.tolist()
-    df = df[cols].copy()
-    html = f"""
-    <div class="section">
-        <h3>📋 {title}</h3>
-        <table class="data-table">
-            <thead><tr>{"".join([f"<th>{c}</th>" for c in cols])}</tr></thead>
-            <tbody>
-    """
-    for _, row in df.iterrows():
-        html += "<tr>"
-        for col in cols:
-            val = row[col]
-            if pd.isna(val):
-                val = ""
-            html += f"<td>{val}</td>"
-        html += "</tr>"
-    html += """
-            </tbody>
-        </table>
-    </div>
-    """
-    return html
 
 # ====================== 投诉-发货联动核心函数 ======================
 def get_shipping_data_by_selected_complaint(selected_complaint, shipping_df):
@@ -289,7 +255,7 @@ def ai_generate_summary(product_name, tag_name, complaints):
 def load_all_daily_sentiment_data():
     import os
     import glob
-    folder_path = r"./每日打标"
+folder_path = r"./每日打标"
     all_files = glob.glob(os.path.join(folder_path, "*.xlsx"))
     if not all_files:
         return pd.DataFrame()
@@ -413,7 +379,7 @@ def show_daily_sentiment_module():
     st.subheader("📈 趋势统计模块")
     df = load_all_daily_sentiment_data()
     if df.empty:
-        st.warning("未读取到任何每日舆情数据，请检查路径：./每日打标")
+st.warning("未读取到任何每日舆情数据，请检查路径：./每日打标")
         return
     required_cols = ["event_day", "二级标签", "三级标签", "交易号", "客诉原文", "main_sku"]
     missing = [c for c in required_cols if c not in df.columns]
@@ -1032,40 +998,954 @@ AI智能风险分析
 {analysis_html}
 </div>
 </div>
-{charts_html if charts_base64 else ''}
-{paypal_analysis_html if paypal_data is not None else ''}
-{shipping_analysis_html if shipping_data is not None else ''}
-{internal_feedback_html if internal_feedback_data is not None else ''}
+{charts_html if charts_html else ''}
+{paypal_analysis_html if paypal_analysis_html else ''}
+{shipping_analysis_html if shipping_analysis_html else ''}
+{internal_feedback_html}
 """
     }
     return html_content
 
-# ====================== 主页面入口 ======================
-def main():
-    st.title("📊 电商舆情与风险监控系统")
-    st.sidebar.title("导航菜单")
-    menu = ["首页", "数据总览", "趋势统计", "详细投诉数据", "发货表现分析"]
-    choice = st.sidebar.radio("选择功能模块", menu, index=0)
-    
-    if choice == "首页":
-        st.success("👋 欢迎使用舆情风险监控系统")
-        st.markdown("### 系统功能说明")
-        st.info("• 数据总览：查看质量、物流、售后等问题TOP10商品")
-        st.info("• 趋势统计：按时间/标签统计投诉趋势、导出黑榜")
-        st.info("• 详细投诉数据：单条投诉详情 + 自动匹配发货数据")
-        st.info("• 发货表现分析：投诉与物流、时效、异常联动分析")
-        
-    elif choice == "数据总览":
+def generate_data_table_html(df: pd.DataFrame, title: str = "数据详情", columns: list = None) -> str:
+    table_html = f"<h3 style='color: #424242; margin-top: 0;'>{title}</h3>"
+    table_html += "<table class='data-table'><thead><tr>"
+    if columns:
+        display_cols = [col for col in columns if col in df.columns]
+    else:
+        display_cols = df.columns.tolist()
+    for col in display_cols:
+        table_html += f"<th>{col}</th>"
+    table_html += "</tr></thead><tbody>"
+    for _, row in df.iterrows():
+        table_html += "<tr>"
+        for col in display_cols:
+            table_html += f"<td>{str(row[col]) if pd.notna(row[col]) else ''}</td>"
+        table_html += "</tr>"
+    table_html += "</tbody></table>"
+    return table_html
+
+def add_report_export_ui(report_type: str, data: Any, title: str, data_stats: list, charts: Dict[str, go.Figure] = None, internal_feedback_data: pd.DataFrame = None, paypal_data: pd.DataFrame = None, store_data: dict = None, shipping_data: pd.DataFrame = None):
+    html_content = ""
+    analysis_content = ""
+    report_bytes = None
+    mime_type = ""
+    file_ext = ""
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        report_format = st.selectbox("选择报告格式", ["HTML", "Markdown"], key=f"report_format_{report_type}")
+    with col2:
+        generate_clicked = st.button("🚨 生成风险分析报告", use_container_width=True, key=f"generate_report_{report_type}")
+    if generate_clicked:
+        with st.spinner("AI正在全面分析风险并生成报告（可能需要30-60秒）..."):
+            analysis_content = generate_ai_analysis(report_type, data, title)
+        if report_format == "HTML":
+            charts_base64 = {}
+            if charts:
+                for chart_name, fig in charts.items():
+                    try:
+                        charts_base64[chart_name] = fig_to_base64(fig)
+                    except Exception as e:
+                        st.warning(f"图表转换失败：{chart_name} - {str(e)}")
+            html_content = generate_html_report(analysis_content, title, data_stats, report_type, charts_base64, internal_feedback_data, paypal_data, store_data, shipping_data)
+            report_bytes = html_content.encode('utf-8')
+            mime_type = "text/html"
+            file_ext = "html"
+        else:
+            report_bytes = analysis_content.encode('utf-8')
+            mime_type = "text/markdown"
+            file_ext = "md"
+        st.download_button(label=f"📥 下载{report_format}风险报告", data=report_bytes, file_name=f"风险分析报告_{title.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file_ext}", mime=mime_type, use_container_width=True)
+    with st.expander("📋 查看风险报告预览", expanded=True):
+        if not generate_clicked:
+            st.info("请点击上方【生成风险分析报告】按钮后查看预览")
+        else:
+            if report_format == "HTML" and html_content:
+                st.html(html_content)
+            elif report_format == "Markdown" and analysis_content:
+                st.markdown(analysis_content)
+            else:
+                st.warning("报告生成失败，请重试")
+
+@st.cache_data(ttl=3600)
+def load_internal_feedback_data():
+    try:
+        df = pd.read_excel(INTERNAL_FEEDBACK_PATH)
+        if '年份' not in df.columns:
+            df['年份'] = df.get('year', pd.NA)
+        if '月份' not in df.columns:
+            df['月份'] = df.get('month', pd.NA)
+        if 'opera_team' not in df.columns:
+            df['opera_team'] = df.get('运营团队', pd.NA)
+        if '商品' not in df.columns:
+            df['商品'] = df.get('product', pd.NA)
+        if '文本内容' not in df.columns:
+            df['文本内容'] = df.get('content', pd.NA)
+        df['年份'] = pd.to_numeric(df['年份'], errors='coerce')
+        df['月份'] = pd.to_numeric(df['月份'], errors='coerce')
+        df['商品_清理'] = df['商品'].astype(str).str.strip()
+        df['opera_team_清理'] = df['opera_team'].astype(str).str.strip()
+        return df
+    except Exception as e:
+        st.error(f"加载内部舆情数据失败：{str(e)}")
+        return pd.DataFrame()
+
+def get_store_internal_feedback(store_name: str, product_skus: List[str] = None) -> pd.DataFrame:
+    try:
+        df_internal = load_internal_feedback_data()
+        if df_internal.empty:
+            return pd.DataFrame()
+        df_filtered = df_internal.copy()
+        if product_skus:
+            df_filtered = df_filtered[df_filtered['商品_清理'].isin([str(sku).strip() for sku in product_skus])]
+        return df_filtered
+    except Exception as e:
+        st.warning(f"获取内部反馈数据失败：{str(e)}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=3600)
+def load_paypal_30d_data():
+    try:
+        df = pd.read_excel(PAYPAL_30D_PATH)
+        df.columns = df.columns.str.strip()
+        if '落地页' in df.columns:
+            df['url_prefix'] = df['落地页'].astype(str).apply(lambda x: re.sub(r'^https?://(www\.)?', '', x).split('/')[0] if pd.notna(x) else '')
+        return df
+    except Exception as e:
+        st.warning(f"加载店铺近30天表现数据失败：{str(e)}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=3600)
+def load_paypal_risk_data():
+    try:
+        df = pd.read_excel(PAYPAL_RISK_PATH)
+        df.columns = df.columns.str.strip()
+        if '落地页' in df.columns:
+            df['url_prefix'] = df['落地页'].astype(str).apply(lambda x: re.sub(r'^https?://(www\.)?', '', x).split('/')[0] if pd.notna(x) else '')
+        df = _process_paypal_date_fields(df)
+        df = _calculate_complaint_contribution(df)
+        return df
+    except Exception as e:
+        st.warning(f"加载风险店铺投诉数据失败：{str(e)}")
+        return pd.DataFrame()
+
+def _process_paypal_date_fields(df):
+    if '统计年月' in df.columns:
+        df['年月'] = pd.to_datetime(df['统计年月'], errors='coerce').dt.strftime('%Y-%m')
+    elif '投诉时间' in df.columns:
+        df['年月'] = pd.to_datetime(df['投诉时间'], errors='coerce').dt.strftime('%Y-%m')
+    elif '日期' in df.columns:
+        df['年月'] = pd.to_datetime(df['日期'], errors='coerce').dt.strftime('%Y-%m')
+    if '年月' not in df.columns and '年份' in df.columns and '月份' in df.columns:
+        df['年份'] = pd.to_numeric(df['年份'], errors='coerce').fillna(0).astype(int)
+        df['月份'] = pd.to_numeric(df['月份'], errors='coerce').fillna(0).astype(int)
+        df['年月'] = df.apply(lambda x: f"{x['年份']}-{x['月份']:02d}" if x['年份'] != 0 and x['月份'] != 0 else None, axis=1)
+        df = df[df['年月'].notna()].copy()
+    return df
+
+def _calculate_complaint_contribution(df):
+    necessary_cols = ['与描述不符投诉数', '未收到货投诉数', '总投诉数', '该月出单数', 'url_prefix', '年月']
+    for col in necessary_cols:
+        if col not in df.columns:
+            df[col] = 0.0
+    numeric_cols = ['与描述不符投诉数', '未收到货投诉数', '总投诉数', '该月出单数']
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+    store_month_totals = df.groupby(['url_prefix', '年月']).agg({'与描述不符投诉数': 'sum', '未收到货投诉数': 'sum', '总投诉数': 'sum', '该月出单数': 'sum'}).reset_index()
+    store_month_totals.rename(columns={'与描述不符投诉数': '店铺月_与描述不符总数', '未收到货投诉数': '店铺月_未收到货总数', '总投诉数': '店铺月_总投诉总数', '该月出单数': '店铺月_总订单总数'}, inplace=True)
+    df = pd.merge(df, store_month_totals, on=['url_prefix', '年月'], how='left')
+    df['与描述不符投诉贡献'] = df.apply(lambda row: (row['与描述不符投诉数'] / row['店铺月_与描述不符总数']) * 100 if row['店铺月_与描述不符总数'] > 0 else 0.0, axis=1)
+    df['未收到货投诉贡献'] = df.apply(lambda row: (row['未收到货投诉数'] / row['店铺月_未收到货总数']) * 100 if row['店铺月_未收到货总数'] > 0 else 0.0, axis=1)
+    df['总投诉贡献'] = df.apply(lambda row: (row['总投诉数'] / row['店铺月_总投诉总数']) * 100 if row['店铺月_总投诉总数'] > 0 else 0.0, axis=1)
+    df['总订单贡献'] = df.apply(lambda row: (row['该月出单数'] / row['店铺月_总订单总数']) * 100 if row['店铺月_总订单总数'] > 0 else 0.0, axis=1)
+    df['与描述不符投诉率'] = df.apply(lambda row: (row['与描述不符投诉数'] / row['该月出单数']) * 100 if row['该月出单数'] > 0 else 0.0, axis=1)
+    df['未收到货投诉率'] = df.apply(lambda row: (row['未收到货投诉数'] / row['该月出单数']) * 100 if row['该月出单数'] > 0 else 0.0, axis=1)
+    df['总投诉率'] = df.apply(lambda row: (row['总投诉数'] / row['该月出单数']) * 100 if row['该月出单数'] > 0 else 0.0, axis=1)
+    df.drop(columns=['店铺月_与描述不符总数', '店铺月_未收到货总数', '店铺月_总投诉总数', '店铺月_总订单总数'], inplace=True, errors='ignore')
+    contribution_cols = ['与描述不符投诉贡献', '未收到货投诉贡献', '总投诉贡献', '总订单贡献']
+    rate_cols = ['与描述不符投诉率', '未收到货投诉率', '总投诉率']
+    for col in contribution_cols + rate_cols:
+        df[col] = df[col].round(2)
+    return df
+
+def get_deepseek_label(review_text: str) -> Dict[str, Any]:
+    if pd.isna(review_text) or review_text.strip() == "":
+        return {"risk_type": "其他", "reason_analysis": "无评论内容", "severity": "低"}
+    review_text = str(review_text)[:2000]
+    prompt = f"""你是电商评论分析专家,请分析以下Trustpilot差评：
+1. 风险类型（物流/发货风险、质量/假货风险、售后/退款风险、其他）
+2. 核心原因（≤50字）
+3. 严重程度（高、中、低）
+差评内容：{review_text}
+严格按JSON格式返回,不要添加任何额外内容：
+{{"risk_type":"","reason_analysis":"","severity":""}}"""
+    payload = {"model": DEEPSEEK_CONFIG["model"], "messages": [{"role": "user", "content": prompt}], "temperature": DEEPSEEK_CONFIG["temperature"], "max_tokens": DEEPSEEK_CONFIG["max_tokens"], "stream": False}
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {DEEPSEEK_CONFIG['api_key']}"}
+    for retry in range(DEEPSEEK_CONFIG["retry_times"]):
+        try:
+            response = requests.post(DEEPSEEK_CONFIG["api_url"], headers=headers, json=payload, timeout=DEEPSEEK_CONFIG["timeout"])
+            response.raise_for_status()
+            result = response.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                content = result["choices"][0]["message"]["content"].strip()
+                content = re.sub(r'^```json|```$', '', content).strip()
+                label_result = json.loads(content)
+                risk_type = label_result.get("risk_type", "其他")
+                reason_analysis = label_result.get("reason_analysis", "无法分析")[:50]
+                severity = label_result.get("severity", "低")
+                valid_risk_types = ["物流/发货风险", "质量/假货风险", "售后/退款风险", "其他"]
+                valid_severities = ["高", "中", "低"]
+                if risk_type not in valid_risk_types:
+                    risk_type = "其他"
+                if severity not in valid_severities:
+                    severity = "低"
+                return {"risk_type": risk_type, "reason_analysis": reason_analysis, "severity": severity}
+            else:
+                raise ValueError("API返回格式异常,无choices字段")
+        except Exception as e:
+            error_msg = str(e)
+            if retry == DEEPSEEK_CONFIG["retry_times"] - 1:
+                st.warning(f"DeepSeek API调用失败（重试{DEEPSEEK_CONFIG['retry_times']}次后）：{error_msg},使用关键词匹配")
+                text = review_text.lower()
+                risk_type = "其他"
+                for rt, keywords in RISK_KEYWORDS.items():
+                    if any(kw in text for kw in keywords):
+                        risk_type = rt
+                        break
+                hit_count = sum(1 for kw_list in RISK_KEYWORDS.values() for kw in kw_list if kw in text)
+                severity = "高" if hit_count >= 3 else "中" if hit_count >= 1 else "低"
+                return {"risk_type": risk_type, "reason_analysis": f"API调用失败,关键词匹配到{hit_count}个风险词", "severity": severity}
+            else:
+                time.sleep(DEEPSEEK_CONFIG["retry_delay"] * (retry + 1))
+                continue
+    return {"risk_type": "其他", "reason_analysis": "API调用失败", "severity": "中"}
+
+def summarize_store_risk(store_name: str, bad_reviews: List[str]) -> str:
+    if not bad_reviews or all(pd.isna(r) or r.strip() == "" for r in bad_reviews):
+        return "暂无差评,店铺运营良好"
+    review_sample = "\n\n".join([f"{i + 1}. {str(review)[:500]}" for i, review in enumerate(bad_reviews[:10])])
+    prompt = f"""你是电商舆情分析专家,请总结以下店铺的核心风险点：
+店铺名称：{store_name}
+差评样本（前10条）：
+{review_sample}
+总结要求：
+1. 用3-5个核心要点总结,每个要点不超过20字
+2. 语言简洁直观,突出核心问题
+3. 按问题严重程度排序
+4. 只返回总结内容,不要额外解释"""
+    payload = {"model": DEEPSEEK_CONFIG["model"], "messages": [{"role": "user", "content": prompt}], "temperature": 0.3, "max_tokens": 300, "stream": False}
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {DEEPSEEK_CONFIG['api_key']}"}
+    try:
+        response = requests.post(DEEPSEEK_CONFIG["api_url"], headers=headers, json=payload, timeout=DEEPSEEK_CONFIG["timeout"])
+        response.raise_for_status()
+        result = response.json()
+        if "choices" in result and len(result["choices"]) > 0:
+            summary = result["choices"][0]["message"]["content"].strip()
+            summary_items = summary.split('\n')
+            formatted_summary = []
+            for item in summary_items:
+                item = item.strip()
+                if item and not item.startswith('###'):
+                    item = re.sub(r'^\d+\.?\s*', '', item)
+                    if item:
+                        formatted_summary.append(item)
+            if not formatted_summary:
+                formatted_summary = summary.split('\n')[:3]
+            formatted_summary = formatted_summary[:5]
+            risk_points = [f"{i + 1}. {point}" for i, point in enumerate(formatted_summary) if point]
+            return "\n".join(risk_points) if risk_points else "未识别到明显风险点"
+        else:
+            return "未识别到明显风险点"
+    except Exception as e:
+        st.warning(f"风险点总结失败：{str(e)}")
+        risk_hits = {}
+        all_text = " ".join([str(r).lower() for r in bad_reviews])
+        for risk_type, keywords in RISK_KEYWORDS.items():
+            hits = sum(1 for kw in keywords if kw in text)
+            if hits > 0:
+                risk_hits[risk_type] = hits
+        if risk_hits:
+            sorted_risks = sorted(risk_hits.items(), key=lambda x: x[1], reverse=True)
+            risk_points = []
+            for risk_type, hits in sorted_risks[:3]:
+                if risk_type == "物流/发货风险":
+                    risk_points.append("1. 物流延迟,大量用户反馈未收到货")
+                elif risk_type == "质量/假货风险":
+                    risk_points.append("2. 商品质量差,疑似假货/描述不符")
+                elif risk_type == "售后/退款风险":
+                    risk_points.append("3. 售后无响应,退款申请被拒绝")
+            return "\n".join(risk_points)
+        else:
+            return "未识别到明显风险点"
+
+@st.cache_data(ttl=3600)
+def batch_label_reviews(reviews: List[str]) -> List[Dict[str, Any]]:
+    results = []
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    unique_reviews = list({review: idx for idx, review in enumerate(reviews)}.keys())
+    unique_results = {}
+    for i, review in enumerate(unique_reviews):
+        progress = (i + 1) / len(reviews)
+        progress_bar.progress(progress)
+        status_text.text(f"正在分析第 {i + 1}/{len(reviews)} 条差评...")
+        result = get_deepseek_label(review)
+        unique_results[review] = result
+        time.sleep(0.2)
+    results = [unique_results[review] for review in reviews]
+    progress_bar.empty()
+    status_text.empty()
+    return results
+
+def get_store_data():
+    try:
+        df = pd.read_excel(INPUT_FILE_PATH)
+        def parse_date(date_str):
+            if pd.isna(date_str):
+                return None
+            date_formats = ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d']
+            for fmt in date_formats:
+                try:
+                    return datetime.strptime(str(date_str), fmt)
+                except:
+                    continue
+            return pd.to_datetime(date_str, errors='coerce')
+        df['published_datetime'] = df['published_date'].apply(parse_date)
+        df = df[df['published_datetime'].notna()].copy()
+        now = datetime.now()
+        cutoff_28d = now - timedelta(days=28)
+        cutoff_7d = now - timedelta(days=7)
+        df_28d = df[df['published_datetime'] >= cutoff_28d].copy()
+        def get_periods():
+            periods = []
+            for i in range(4):
+                end = now - timedelta(days=i * 7)
+                start = end - timedelta(days=6)
+                if start < cutoff_28d:
+                    start = cutoff_28d
+                periods.append({'name': f"第{i + 1}周", 'start': start, 'end': end, 'num': i + 1, 'time_range': f"{start.strftime('%m-%d')} ~ {end.strftime('%m-%d')}"})
+            return periods[::-1]
+        periods = get_periods()
+        store_metrics = []
+        period_details = []
+        for store in df['store_name'].unique():
+            df_store = df[df['store_name'] == store].copy()
+            df_store_28d = df_28d[df_28d['store_name'] == store].copy()
+            total_reviews = len(df_store)
+            reviews_28d = len(df_store_28d)
+            df_store_7d = df_store_28d[df_store_28d['published_datetime'] >= cutoff_7d].copy()
+            ot_7d = len(df_store_7d[df_store_7d['star_rating'] <= 2])
+            period_data = {}
+            total_28d_ot = 0
+            for p in periods:
+                mask = (df_store_28d['published_datetime'] >= p['start']) & (df_store_28d['published_datetime'] <= p['end'])
+                df_p = df_store_28d[mask].copy()
+                total = len(df_p)
+                avg_rating = round(df_p['star_rating'].mean(), 2) if total else 0
+                ot = len(df_p[df_p['star_rating'] <= 2])
+                one_star = len(df_p[df_p['star_rating'] == 1])
+                one_star_ratio = round(one_star / total * 100, 2) if total else 0
+                risk_hits = {}
+                for risk_type, keywords in RISK_KEYWORDS.items():
+                    if total > 0:
+                        txt_series = df_p[df_p['star_rating'] <= 2]['review_content'].fillna('').str.lower()
+                        hits = sum(1 for txt in txt_series if any(kw in txt for kw in keywords))
+                        risk_hits[risk_type] = hits
+                    else:
+                        risk_hits[risk_type] = 0
+                period_data[p['num']] = {'period': p['name'], 'time_range': p['time_range'], 'total': total, 'avg_rating': avg_rating, 'ot': ot, 'one_star': one_star, 'one_star_ratio': one_star_ratio, 'risk_hits': risk_hits, 'start': p['start'], 'end': p['end']}
+                total_28d_ot += ot
+                period_details.append({'store': store, 'period': p['name'], 'time_range': p['time_range'], 'total_reviews': total, 'avg_rating': avg_rating, 'ot_count': ot, 'one_star_ratio': one_star_ratio})
+            ot_growth = 0
+            if 3 in period_data and period_data[3]['ot'] > 0:
+                ot_growth = (period_data[4]['ot'] - period_data[3]['ot']) / period_data[3]['ot']
+            total_ot = total_28d_ot
+            four_period_over_3 = total_ot > 11
+            two_period_rise = False
+            if 2 in period_data and 3 in period_data and 4 in period_data:
+                two_period_rise = (period_data[3]['ot'] > period_data[2]['ot']) and (period_data[4]['ot'] > period_data[3]['ot'])
+            logi_fake = sum([period_data[p]['risk_hits']['物流/发货风险'] + period_data[p]['risk_hits']['质量/假货风险'] for p in period_data])
+            keyword_outbreak = logi_fake >= RISK_THRESHOLDS["关键词爆发阈值"]
+            risk_level = "safe"
+            risk_reason = ""
+            if ot_7d >= 5 or four_period_over_3 or (two_period_rise and (period_data[3]['ot'] + period_data[4]['ot'] > 5)):
+                risk_level = "high"
+                reasons = []
+                if ot_7d >= 5:
+                    reasons.append("近7天差评≥5条")
+                if four_period_over_3:
+                    reasons.append("28天差评>11条")
+                if two_period_rise:
+                    reasons.append("连续2周差评上升")
+                if ot_growth >= 0.3:
+                    reasons.append(f"差评环比+{ot_growth * 100:.0f}%")
+                if keyword_outbreak:
+                    reasons.append("物流/假货关键词爆发")
+                risk_reason = " | ".join(reasons)
+            elif 3 <= ot_7d <= 5:
+                risk_level = "medium"
+                risk_reason = "近7天差评3-5条"
+            else:
+                if 3 <= total_28d_ot <= 5 and not two_period_rise:
+                    risk_level = "safe"
+                    risk_reason = "28天差评3-5条且无上涨"
+                else:
+                    risk_level = "medium"
+                    risk_reason = "未达安全标准"
+            action = {"high": "立即核查物流/发货/退款,暂停放量", "medium": "加强监控,每日观察", "safe": "正常维护,每周巡检"}[risk_level]
+            avg_28d = round(df_store_28d['star_rating'].mean(), 2) if reviews_28d else 0
+            one_star_total = len(df_store_28d[df_store_28d['star_rating'] == 1])
+            one_star_ratio_28d = round(one_star_total / reviews_28d * 100, 2) if reviews_28d else 0
+            store_metrics.append({"store_name": store, "total_reviews": total_reviews, "reviews_28d": reviews_28d, "avg_rating_28d": avg_28d, "one_star_ratio_28d": one_star_ratio_28d, "ot_28d": total_28d_ot, "ot_7d": ot_7d, "ot_growth": ot_growth, "risk_level": risk_level, "risk_reason": risk_reason, "suggest_action": action, "period_data": period_data})
+        df_stores = pd.DataFrame(store_metrics)
+        df_periods = pd.DataFrame(period_details)
+        return df_stores, df_periods, df
+    except Exception as e:
+        st.error(f"数据加载失败：{str(e)}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+def filter_internal_feedback(df, product=None, year=None, month=None, opera_team=None):
+    filtered_df = df.copy()
+    if product and product != "全部":
+        filtered_df = filtered_df[filtered_df['商品'].astype(str).str.contains(product, na=False)]
+    if year and year != "全部":
+        filtered_df = filtered_df[filtered_df['年份'] == int(year)]
+    if month and month != "全部":
+        filtered_df = filtered_df[filtered_df['月份'] == int(month)]
+    if opera_team and opera_team != "全部":
+        filtered_df = filtered_df[filtered_df['opera_team'].astype(str).str.contains(opera_team, na=False)]
+    return filtered_df
+
+def export_external_dashboard(df_stores, df_periods, selected_store=None):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_display = df_stores.copy()
+        df_display['风险等级'] = df_display['risk_level'].map({'high': '高危', 'medium': '关注', 'safe': '安全'})
+        df_display['差评环比'] = df_display['ot_growth'].apply(lambda x: f"{x * 100:.1f}%")
+        df_display = df_display[['store_name', '风险等级', 'total_reviews', 'reviews_28d', 'avg_rating_28d', 'one_star_ratio_28d', 'ot_7d', '差评环比', 'risk_reason', 'suggest_action']]
+        df_display.columns = ['店铺域名', '风险等级', '总评论数', '近28天评论', '平均星级', '1星占比(%)', '近7天差评', '差评环比', '风险原因', '建议动作']
+        df_display.to_excel(writer, sheet_name='店铺风险总览', index=False)
+        df_periods_export = df_periods.copy()
+        df_periods_export.columns = ['店铺域名', '周期', '时间范围', '总评论数', '平均星级', '1+2星差评数', '1星占比(%)']
+        df_periods_export.to_excel(writer, sheet_name='28天周期趋势', index=False)
+        if selected_store:
+            _, _, df_reviews = get_store_data()
+            df_store_reviews = df_reviews[df_reviews['store_name'] == selected_store].copy()
+            cutoff_date = datetime.now() - timedelta(days=28)
+            df_bad_reviews = df_store_reviews[(df_store_reviews['star_rating'] <= 2) & (df_store_reviews['published_datetime'] >= cutoff_date)].copy()
+            if not df_bad_reviews.empty:
+                reviews_list = df_bad_reviews['review_content'].tolist()
+                label_results = batch_label_reviews(reviews_list)
+                df_bad_reviews['发布时间'] = df_bad_reviews['published_datetime'].dt.strftime('%Y-%m-%d')
+                df_bad_reviews['AI风险类型'] = [r['risk_type'] for r in label_results]
+                df_bad_reviews['AI原因分析'] = [r['reason_analysis'] for r in label_results]
+                df_bad_reviews['AI严重程度'] = [r['severity'] for r in label_results]
+                df_bad_reviews_export = df_bad_reviews[['发布时间', 'star_rating', 'review_title', 'review_content', 'AI风险类型', 'AI原因分析', 'AI严重程度']]
+                df_bad_reviews_export.columns = ['发布时间', '星级', '标题', '评论内容', 'AI风险类型', 'AI原因分析', 'AI严重程度']
+                df_bad_reviews_export.to_excel(writer, sheet_name=f'{selected_store}_差评分析', index=False)
+        output.seek(0)
+        return output.getvalue()
+
+def show_store_30d_performance(selected_store: str):
+    st.subheader("📈 店铺近30天表现")
+    df_paypal_30d = load_paypal_30d_data()
+    if df_paypal_30d.empty:
+        st.info("暂无店铺近30天表现数据")
+        return
+    df_store_30d = df_paypal_30d[df_paypal_30d['url_prefix'] == selected_store].copy()
+    if df_store_30d.empty:
+        st.info(f"店铺 {selected_store} 暂无近30天表现数据")
+        return
+    cols = st.columns(4)
+    total_orders = df_store_30d['近30天出单数'].sum()
+    total_complaints = df_store_30d['总投诉数'].sum()
+    desc_complaints = df_store_30d['与描述不符投诉数'].sum()
+    delivery_complaints = df_store_30d['未收到货投诉数'].sum()
+    with cols[0]:
+        st.metric("近30天出单数", total_orders)
+    with cols[1]:
+        st.metric("总投诉数", total_complaints)
+    with cols[2]:
+        st.metric("与描述不符投诉数", desc_complaints)
+    with cols[3]:
+        st.metric("未收到货投诉数", delivery_complaints)
+    display_cols = ['店铺', '落地页', '产品SKU', '运营团队', '运营人员', '近30天出单数', '与描述不符投诉数', '未收到货投诉数', '总投诉数', '与描述不符投诉率', '未收到货投诉率', '总投诉率']
+    display_cols = [col for col in display_cols if col in df_store_30d.columns]
+    st.dataframe(df_store_30d[display_cols], width='stretch', hide_index=True)
+
+def show_shipping_performance_module(selected_store: str):
+    st.subheader("📦 发货表现分析")
+    df_shipping = load_shipping_data()
+    if df_shipping.empty:
+        st.info("暂无发货表现数据")
+        return
+    df_store_shipping = df_shipping[df_shipping['url_prefix'] == selected_store].copy()
+    if df_store_shipping.empty:
+        st.info(f"店铺 {selected_store} 暂无发货表现数据")
+        return
+    rate_columns = []
+    for col in df_store_shipping.columns:
+        if any(keyword in col.lower() for keyword in ['率', 'rate', 'ratio', 'percent', '%']):
+            rate_columns.append(col)
+    if not rate_columns:
+        st.warning("发货数据中未识别到比率指标列")
+        return
+    cols = st.columns(min(5, len(rate_columns) + 1))
+    with cols[0]:
+        st.metric("数据记录数", len(df_store_shipping))
+    for idx, col in enumerate(rate_columns[:4]):
+        if col in df_store_shipping.columns:
+            avg_val = df_store_shipping[col].mean()
+            if pd.notna(avg_val):
+                with cols[idx + 1]:
+                    st.metric(col, f"{avg_val:.2f}%")
+    st.subheader("📊 发货表现详细数据")
+    display_cols = []
+    for col in df_store_shipping.columns:
+        if col != 'url_prefix':
+            display_cols.append(col)
+    def highlight_shipping_rate(val, col_name):
+        if pd.isna(val):
+            return None
+        if '7天' in col_name or '7' in col_name and '天' in col_name:
+            if val < 0.7:
+                return 'background-color: #FFCDD2; color: #D32F2F; font-weight: bold;'
+        if '14天' in col_name:
+            if val < 0.8:
+                return 'background-color: #FFCDD2; color: #D32F2F; font-weight: bold;'
+        if '28天' in col_name:
+            if val < 0.9:
+                return 'background-color: #FFCDD2; color: #D32F2F; font-weight: bold;'
+        return None
+    styled_df = df_store_shipping[display_cols].style
+    for col in rate_columns:
+        if col in display_cols:
+            styled_df = styled_df.format({col: lambda x: f"{x * 100:.2f}%" if pd.notna(x) else ''})
+    for col in display_cols:
+        if col in rate_columns:
+            styled_df = styled_df.applymap(lambda x: highlight_shipping_rate(x, col), subset=[col])
+    st.dataframe(styled_df, width='stretch', hide_index=True)
+    col_export, _ = st.columns([1, 9])
+    with col_export:
+        excel_data = convert_df_to_excel(df_store_shipping)
+        st.download_button(label="📥 导出发货数据", data=excel_data, file_name=f"{selected_store}_发货表现数据_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+def show_paypal_complaint_module(selected_store: str):
+    st.subheader("💳 PayPal投诉情况分析")
+    df_paypal = load_paypal_risk_data()
+    if df_paypal.empty:
+        st.info("暂无PayPal投诉数据")
+        return
+    df_store_paypal = df_paypal[df_paypal['url_prefix'] == selected_store].copy()
+    if df_store_paypal.empty:
+        st.info(f"店铺 {selected_store} 暂无PayPal投诉数据")
+        return
+    col_filter, col_download = st.columns([2, 1])
+    with col_filter:
+        year_month_list = sorted(df_store_paypal['年月'].unique())
+        selected_year_month = st.selectbox("选择统计年月", year_month_list, index=0, key=f"paypal_year_month_{selected_store}")
+        df_filtered = df_store_paypal[df_store_paypal['年月'] == selected_year_month].copy()
+    with col_download:
+        excel_data = convert_df_to_excel(df_filtered)
+        st.download_button(label="📥 导出该年月数据", data=excel_data, file_name=f"{selected_store}_PayPal投诉数据_{selected_year_month}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    col1, col2, col3, col4, col5 = st.columns(5)
+    total_complaints = df_filtered['总投诉数'].sum()
+    total_orders = df_filtered['该月出单数'].sum()
+    total_desc_rate = (df_filtered['与描述不符投诉数'].sum() / total_orders * 100) if total_orders > 0 else 0
+    total_delivery_rate = (df_filtered['未收到货投诉数'].sum() / total_orders * 100) if total_orders > 0 else 0
+    overall_complaint_rate = (total_complaints / total_orders * 100) if total_orders > 0 else 0
+    with col1:
+        st.metric(f"{selected_year_month} 总投诉数", total_complaints)
+    with col2:
+        st.metric(f"{selected_year_month} 总订单数", total_orders)
+    with col3:
+        st.metric("与描述不符投诉率", f"{total_desc_rate:.2f}%")
+    with col4:
+        st.metric("未收到货投诉率", f"{total_delivery_rate:.2f}%")
+    with col5:
+        st.metric("整体投诉率", f"{overall_complaint_rate:.2f}%")
+    st.subheader(f"{selected_year_month} - 详细投诉数据")
+    keep_cols = ['年月', '产品SKU', '运营团队', 'prod_url', '该月出单数', '与描述不符投诉数', '与描述不符投诉率', '与描述不符投诉贡献', '未收到货投诉数', '未收到货投诉率', '未收到货投诉贡献', '总投诉数', '总投诉率', '总投诉贡献', '总订单贡献']
+    keep_cols = [col for col in keep_cols if col in df_filtered.columns]
+    df_display_paypal = df_filtered[keep_cols].copy()
+    st.dataframe(df_display_paypal, width='stretch', hide_index=True, on_select="rerun", selection_mode="multi-row", key=f"paypal_complaint_table_{selected_store}")
+    selected_rows = st.session_state.get(f"paypal_complaint_table_{selected_store}", {}).get('selection', {}).get('rows', [])
+    if selected_rows:
+        selected_row = df_display_paypal.iloc[selected_rows[0]]
+        selected_sku = selected_row.get('产品SKU', '')
+        selected_team = selected_row.get('运营团队', '')
+        st.subheader(f"📄 {selected_sku} - 每日舆情")
+        df_internal = load_internal_feedback_data()
+        if not df_internal.empty:
+            mask = (df_internal['商品_清理'] == str(selected_sku).strip()) & (df_internal['opera_team_清理'] == str(selected_team).strip())
+            df_filtered_internal = df_internal[mask].copy()
+            if not df_filtered_internal.empty:
+                display_cols = ['年份', '月份', '商品', 'opera_team', '投诉原因总结']
+                st.dataframe(df_filtered_internal[display_cols], width='stretch', hide_index=True)
+                excel_data = convert_df_to_excel(df_filtered_internal)
+                st.download_button(label="📥 导出该商品内部舆情数据", data=excel_data, file_name=f"{selected_sku}_内部舆情数据_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            else:
+                st.info(f"未找到SKU:{selected_sku} 运营团队:{selected_team} 的内部舆情数据")
+
+def show_complaint_query_module():
+    st.title("📋 内部舆情看板 - 客诉查询", anchor=False)
+    st.divider()
+    df_feedback = load_internal_feedback_data()
+    if df_feedback.empty:
+        st.warning("暂无内部舆情数据")
+        return
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        product_list = ["全部"] + sorted(df_feedback['商品'].dropna().unique().tolist())
+        selected_product = st.selectbox("商品", product_list, index=0)
+    with col2:
+        year_list = ["全部"] + sorted(df_feedback['年份'].dropna().unique().astype(int).tolist())
+        selected_year = st.selectbox("年份", year_list, index=0)
+    with col3:
+        month_list = ["全部"] + sorted(df_feedback['月份'].dropna().unique().astype(int).tolist())
+        selected_month = st.selectbox("月份", month_list, index=0)
+    with col4:
+        team_list = ["全部"] + sorted(df_feedback['opera_team'].dropna().unique().tolist())
+        selected_team = st.selectbox("运营团队", team_list, index=0)
+    df_filtered = filter_internal_feedback(df_feedback, product=selected_product, year=selected_year, month=selected_month, opera_team=selected_team)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("总记录数", len(df_filtered))
+    with col2:
+        st.metric("涉及商品数", df_filtered['商品'].nunique())
+    with col3:
+        st.metric("涉及年份数", df_filtered['年份'].nunique())
+    with col4:
+        st.metric("涉及运营团队数", df_filtered['opera_team'].nunique())
+    st.divider()
+    st.markdown("⚠️ 内部风险看板 - 运营团队风险分布")
+    if not df_filtered.empty:
+        team_stats = df_filtered.groupby('opera_team').size().reset_index(name='风险数量')
+        team_stats = team_stats.sort_values('风险数量', ascending=False).head(10)
+        fig = go.Figure(data=[go.Bar(x=team_stats['opera_team'], y=team_stats['风险数量'], marker=dict(color=team_stats['风险数量'], colorscale='Reds', showscale=True, colorbar=dict(title="风险数量")), text=team_stats['风险数量'], textposition='outside')])
+        fig.update_layout(xaxis_title="运营团队", yaxis_title="风险记录数", height=450, xaxis_tickangle=-45, margin=dict(l=20, r=20, t=60, b=100))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("当前筛选条件下无数据，无法生成风险分布图表")
+    st.divider()
+    st.markdown("### 📄 风险分析报告")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        report_format = st.selectbox("选择报告格式", ["HTML"], key="complaint_report_format")
+    with col2:
+        generate_report = st.button("🚨 生成风险分析报告", use_container_width=True, key="generate_complaint_report")
+    with st.expander("📋 查看风险报告预览", expanded=True):
+        if not generate_report:
+            st.info("请点击上方【生成风险分析报告】按钮后查看预览")
+        else:
+            with st.spinner("正在生成报告..."):
+                report_title = f"客诉查询风险分析报告_{selected_product}_{selected_team}"
+                data_stats = [{"label": "总记录数", "value": len(df_filtered), "risk": "high"}, {"label": "涉及商品数", "value": df_filtered['商品'].nunique()}, {"label": "涉及年份数", "value": df_filtered['年份'].nunique()}, {"label": "涉及运营团队数", "value": df_filtered['opera_team'].nunique()}]
+                add_report_export_ui("internal", df_filtered, report_title, data_stats)
+    st.divider()
+    st.markdown("### 📊 数据详情")
+    display_cols = ['年份', '月份', '商品', 'opera_team', '投诉原因总结']
+    display_cols = [col for col in display_cols if col in df_filtered.columns]
+    col_display, col_export = st.columns([9, 1])
+    with col_display:
+        st.dataframe(df_filtered[display_cols], width='stretch', hide_index=True, use_container_width=True)
+    with col_export:
+        st.subheader("")
+        excel_data = convert_df_to_excel(df_filtered)
+        st.download_button(label="📥 导出Excel", data=excel_data, file_name=f"客诉查询数据_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+def show_internal_feedback_subpage(subpage):
+    if subpage == "数据总览":
+        st.title("📈 内部舆情看板 - 数据总览", anchor=False)
+        st.divider()
         show_data_overview_module()
-        
-    elif choice == "趋势统计":
+    elif subpage == "每日舆情":
+        st.title("📈 客户声音监听", anchor=False)
+        st.divider()
         show_daily_sentiment_module()
-        
-    elif choice == "详细投诉数据":
-        show_complaint_detail_module()
-        
-    elif choice == "发货表现分析":
-        show_shipping_analysis_module()
+    elif subpage == "客诉查询":
+        show_complaint_query_module()
+
+def show_risk_rules():
+    st.markdown("""
+### 📋 Trustpilot店铺风险判定规则
+#### 一、核心判定维度
+| 维度 | 判定标准 |
+|------|----------|
+| 近7天差评数 | 统计最近7天内1-2星评论数量 |
+| 28天差评总数 | 统计近28天内1-2星评论总数 |
+| 差评环比增长 | 最新一周 vs 上一周 差评数增长率 |
+| 连续增长趋势 | 是否连续2周差评数上升 |
+| 风险关键词爆发 | 物流/假货相关关键词命中数 ≥8 |
+#### 二、风险等级判定逻辑
+**🔴 高危店铺（满足任一条件）：**
+- 近7天差评 ≥5条
+- 28天差评 >11条
+- 连续2周差评上升 且 近2周差评总数 >5条
+- 差评环比增长 ≥30%
+- 物流/假货关键词爆发（≥8个）
+**🟡 关注店铺（满足任一条件）：**
+- 近7天差评 3-5条
+- 28天差评 3-5条 但有上涨趋势
+- 未达安全标准的其他情况
+**🟢 安全店铺（满足所有条件）：**
+- 近7天差评 <3条
+- 28天差评 ≤5条 且 无连续上涨趋势
+- 无关键词爆发情况
+#### 三、风险应对建议
+| 风险等级 | 建议动作 |
+|----------|----------|
+| 高危 | 立即核查物流/发货/退款,暂停放量 |
+| 关注 | 加强监控,每日观察 |
+| 安全 | 正常维护,每周巡检 |
+""")
+    keywords_df = pd.DataFrame([{"风险类型": k, "关键词": ", ".join(v)} for k, v in RISK_KEYWORDS.items()])
+    st.dataframe(keywords_df, width='stretch', hide_index=True)
+    st.markdown(f"""
+#### 五、阈值配置
+- 关键词爆发阈值：{RISK_THRESHOLDS['关键词爆发阈值']}个
+- 差评统计范围：1-2星评论
+- 时间周期：近7天 / 近28天（拆分为4个7天周期）
+""")
+
+def show_external_feedback_dashboard():
+    st.subheader("🌐 外部舆情风险监控（Trustpilot）", divider='blue')
+    col_title, col_button_rule = st.columns([10, 2])
+    with col_button_rule:
+        if st.button("📋 查看风险判定规则", use_container_width=True):
+            st.session_state.show_rules = not st.session_state.get('show_rules', False)
+    if st.session_state.get('show_rules', False):
+        with st.expander("风险判定规则详情", expanded=True):
+            show_risk_rules()
+    st.divider()
+    df_stores, df_periods, df_reviews = get_store_data()
+    if df_stores.empty:
+        st.warning("暂无外部舆情数据,请确认数据文件是否存在")
+        return
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    with col1:
+        st.metric(label="监控店铺总数", value=len(df_stores))
+    with col2:
+        high_risk = len(df_stores[df_stores['risk_level'] == 'high'])
+        st.metric(label="高危店铺数", value=high_risk, delta=f"{high_risk / len(df_stores) * 100:.0f}%", delta_color="inverse")
+    with col3:
+        medium_risk = len(df_stores[df_stores['risk_level'] == 'medium'])
+        st.metric(label="关注店铺数", value=medium_risk, delta=f"{medium_risk / len(df_stores) * 100:.0f}%", delta_color="off")
+    with col4:
+        safe_risk = len(df_stores[df_stores['risk_level'] == 'safe'])
+        st.metric(label="安全店铺数", value=safe_risk, delta=f"{safe_risk / len(df_stores) * 100:.0f}%", delta_color="normal")
+    with col5:
+        st.metric(label="近28天总评论", value=df_stores['reviews_28d'].sum())
+    with col6:
+        st.metric(label="近7天差评总数", value=df_stores['ot_7d'].sum())
+    st.divider()
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        fig_pie = create_risk_overview_chart(df_stores)
+        st.plotly_chart(fig_pie, use_container_width=True)
+    with col2:
+        high_stores = df_stores[df_stores['risk_level'] == 'high']['store_name'].head(5).tolist()
+        trend_data = []
+        for store in high_stores:
+            store_periods = df_periods[df_periods['store'] == store]
+            for _, row in store_periods.iterrows():
+                trend_data.append({'店铺': store, '周期': row['period'], '差评数': row['ot_count']})
+        if trend_data:
+            df_trend = pd.DataFrame(trend_data)
+            fig_trend = px.line(df_trend, x='周期', y='差评数', color='店铺', title='高危店铺TOP5 - 差评趋势', markers=True)
+            fig_trend.update_layout(height=400, margin=dict(l=20, r=20, t=50, b=20))
+            st.plotly_chart(fig_trend, use_container_width=True)
+        else:
+            st.info("暂无高危店铺趋势数据")
+    st.divider()
+    st.subheader("店铺风险总览列表")
+    df_display = df_stores.copy()
+    df_display['风险等级'] = df_display['risk_level'].map({'high': '🔴 高危', 'medium': '🟡 关注', 'safe': '🟢 安全'})
+    df_display['差评环比'] = df_display['ot_growth'].apply(lambda x: f"{x * 100:.1f}%")
+    df_display = df_display[['store_name', '风险等级', 'total_reviews', 'reviews_28d', 'avg_rating_28d', 'one_star_ratio_28d', 'ot_7d', '差评环比', 'risk_reason', 'suggest_action']]
+    df_display.columns = ['店铺域名', '风险等级', '总评论数', '近28天评论', '平均星级', '1星占比(%)', '近7天差评', '差评环比', '风险原因', '建议动作']
+    st.dataframe(df_display, width='stretch', hide_index=True, use_container_width=True)
+    col_export, _ = st.columns([1, 9])
+    with col_export:
+        excel_data = export_external_dashboard(df_stores, df_periods)
+        st.download_button(label="📥 导出完整看板数据", data=excel_data, file_name=f"外部舆情看板_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    st.divider()
+    st.subheader("🔍 单店铺详情分析")
+    selected_store = st.selectbox("选择店铺查看详情", df_stores['store_name'].tolist(), index=0)
+    if selected_store:
+        store_data = df_stores[df_stores['store_name'] == selected_store].iloc[0]
+        df_store_reviews = df_reviews[df_reviews['store_name'] == selected_store].copy()
+        risk_icon = {'high': '🔴', 'medium': '🟡', 'safe': '🟢'}[store_data['risk_level']]
+        risk_text = {'high': '高危', 'medium': '关注', 'safe': '安全'}[store_data['risk_level']]
+        st.markdown(f"### {selected_store} | {risk_icon} {risk_text}")
+        st.markdown(f"""
+<div style="background-color: #f0f2f6; padding: 15px; border-radius: 8px; margin: 10px 0;">
+<h4 style="margin-top: 0;">风险判定结果 {risk_icon} {risk_text}</h4>
+<p><strong>判定依据：</strong>{store_data['risk_reason']}</p>
+<p><strong>建议动作：</strong>{store_data['suggest_action']}</p>
+</div>
+""", unsafe_allow_html=True)
+        cutoff_date = datetime.now() - timedelta(days=28)
+        df_bad_reviews = df_store_reviews[(df_store_reviews['star_rating'] <= 2) & (df_store_reviews['published_datetime'] >= cutoff_date)].copy()
+        bad_reviews_list = df_bad_reviews['review_content'].tolist()
+        paypal_data = load_paypal_risk_data()
+        if not paypal_data.empty:
+            paypal_store_data = paypal_data[paypal_data['url_prefix'] == selected_store].copy()
+            product_skus = paypal_store_data['产品SKU'].dropna().unique().tolist() if '产品SKU' in paypal_store_data.columns else []
+        else:
+            paypal_store_data = None
+            product_skus = []
+        internal_feedback_data = get_store_internal_feedback(selected_store, product_skus)
+        shipping_data = load_shipping_data()
+        if not shipping_data.empty:
+            shipping_store_data = shipping_data[shipping_data['url_prefix'] == selected_store].copy()
+        else:
+            shipping_store_data = None
+        charts = {}
+        fig_risk = create_risk_overview_chart(df_stores)
+        charts['全部店铺风险等级分布'] = fig_risk
+        fig_trend = create_risk_trend_chart(store_data)
+        charts['店铺风险趋势分析'] = fig_trend
+        if paypal_store_data is not None and not paypal_store_data.empty:
+            selected_year_month = paypal_store_data['年月'].max()
+            fig_paypal = create_paypal_complaint_chart(paypal_store_data, selected_year_month)
+            if fig_paypal:
+                charts['PayPal投诉分析'] = fig_paypal
+            fig_rate = create_complaint_rate_chart(paypal_store_data)
+            if fig_rate:
+                charts['PayPal投诉率趋势'] = fig_rate
+        if internal_feedback_data is not None and not internal_feedback_data.empty:
+            fig_internal = create_internal_risk_distribution_chart(internal_feedback_data)
+            if fig_internal:
+                charts['内部风险分布'] = fig_internal
+        report_title = f"外部舆情风险分析报告_{selected_store}_{risk_text}"
+        data_stats = [{"label": "风险等级", "value": risk_text, "risk": store_data['risk_level']}, {"label": "近7天差评数", "value": store_data['ot_7d'], "risk": "high" if store_data['ot_7d'] >= 5 else "medium" if store_data['ot_7d'] >= 3 else "safe"}, {"label": "近28天差评数", "value": store_data['ot_28d'], "risk": "high" if store_data['ot_28d'] > 11 else "medium"}, {"label": "平均星级", "value": f"{store_data['avg_rating_28d']}/5.0"}]
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"""
+<div style="padding: 15px; border-radius: 8px; background: #f8f9fa; text-align: center;">
+<h4>店铺总评分</h4>
+<h2>{store_data['avg_rating_28d']}/5.0</h2>
+<p>1星占比: {store_data['one_star_ratio_28d']}%</p>
+</div>
+""", unsafe_allow_html=True)
+        with col2:
+            st.markdown(f"""
+<div style="padding: 15px; border-radius: 8px; background: #f8f9fa; text-align: center;">
+<h4>近28天概览</h4>
+<h2>{store_data['reviews_28d']}</h2>
+<p>1+2星差评: {store_data['ot_28d']}</p>
+<p>日均差评: {store_data['ot_28d'] / 28:.1f}</p>
+</div>
+""", unsafe_allow_html=True)
+        st.divider()
+        show_store_30d_performance(selected_store)
+        st.divider()
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.subheader("28天周期趋势")
+            period_items = sorted(store_data['period_data'].items(), key=lambda x: x[0])
+            period_list = []
+            for idx, (p_num, p_data) in enumerate(period_items):
+                period_list.append({'周期': f"{p_data['period']} ({p_data['time_range']})", '评论数': p_data['total'], '平均星级': p_data['avg_rating'], '1+2星差评': p_data['ot']})
+            st.dataframe(pd.DataFrame(period_list), width='stretch', hide_index=True, use_container_width=True)
+        with col2:
+            fig = create_risk_trend_chart(store_data)
+            st.plotly_chart(fig, use_container_width=True)
+        st.divider()
+        st.subheader("最新差评原文（近28天）- AI智能分析")
+        if not df_bad_reviews.empty:
+            df_bad_reviews = df_bad_reviews.sort_values('published_datetime', ascending=False).head(20)
+            reviews_list = df_bad_reviews['review_content'].tolist()
+            label_results = batch_label_reviews(reviews_list)
+            df_bad_reviews['发布时间'] = df_bad_reviews['published_datetime'].dt.strftime('%Y-%m-%d')
+            df_bad_reviews['完整内容'] = df_bad_reviews['review_content']
+            df_bad_reviews['AI风险类型'] = [r['risk_type'] for r in label_results]
+            df_bad_reviews['AI原因分析'] = [r['reason_analysis'] for r in label_results]
+            df_bad_reviews['AI严重程度'] = [r['severity'] for r in label_results]
+            st.dataframe(df_bad_reviews[['发布时间', 'star_rating', 'review_title', '完整内容', 'AI风险类型', 'AI原因分析', 'AI严重程度']], width='stretch', hide_index=True, use_container_width=True)
+        else:
+            st.info("近28天暂无1-2星差评")
+        st.divider()
+        show_paypal_complaint_module(selected_store)
+        st.divider()
+        show_shipping_performance_module(selected_store)
+
+# =========================== 首页模块 ===========================
+def show_homepage():
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown("# 舆情风险监控系统")
+    with col2:
+        update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.markdown(f"<p style='text-align:right; margin-top:20px;'>更新时间：{update_time}</p>", unsafe_allow_html=True)
+    st.markdown("---")
+    with st.expander("⚡ 快速开始", expanded=True):
+        st.markdown("""
+- **舆情预警**：实时查看最新风险事件
+- **报告生成**：一键导出周期舆情分析报告
+- **智能分析**：基于AI的情感倾向与趋势预测
+""")
+        st.info("👈 左侧导航树可查看完整菜单，下方选择器可快速切换演示内容")
+    st.markdown("## 监听功能核心模块")
+    col_left, col_right = st.columns(2)
+    with col_left:
+        with st.container(border=True):
+            st.subheader("📞 客户声音监听")
+            img_path = "customer_voice.png"
+            online_fallback = "https://picsum.photos/id/20/400/200"
+            img = load_image(img_path, online_fallback)
+            if isinstance(img, Image.Image):
+                st.image(img, use_container_width=True)
+            else:
+                st.image(online_fallback, caption="示例图片", use_container_width=True)
+            st.markdown("**功能描述**")
+            st.markdown("""
+- 数据总览：实时展示周期内总文本数、总商品数；自动统计问题分类 TOP10，定位高风险 SKU；支持按季度、月度等自定义周期筛选数据
+- 客户声音监听（每日舆情）：按二级标签呈现投诉量趋势；支持二三级标签下钻分析占比；自动生成高投诉商品黑榜 TOP10；支持一键导出每日舆情报表
+- 客诉查询：支持多维度精准筛选客诉数据；以热力图展示各运营团队客诉风险分布；自动生成 HTML 风险分析报告；支持客诉明细溯源及 Excel 导出
+""")
+            st.write("")
+    with col_right:
+        with st.container(border=True):
+            st.subheader("🌐 网络舆情监听")
+            img_path2 = "online_opinion.png"
+            online_fallback2 = "https://picsum.photos/id/26/400/200"
+            img2 = load_image(img_path2, online_fallback2)
+            if isinstance(img2, Image.Image):
+                st.image(img2, use_container_width=True)
+            else:
+                st.image(online_fallback2, caption="示例图片", use_container_width=True)
+            st.markdown("**功能描述**")
+            st.markdown("""
+- 全局舆情总览：实时展示总舆情数、差评数、安全店铺数等核心指标，通过风险分布饼图、TOP5 店铺差评趋势图呈现健康度并预警风险。
+- 店铺风险总览：展示全店铺风险等级、评论数、星级、差评率等信息，支持分级筛选，实现重点店铺专项监控。
+- 单店铺深度分析：生成店铺全景画像与 28 天舆情趋势，AI 解析差评原文并完成风险标签分级，快速溯源问题。
+- 全链路风险闭环：整合 PayPal 投诉、物流发货数据，打通舆情、支付、物流全链路，定位风险根源，支撑运营与供应链优化
+""")
+    st.markdown("---")
+    st.caption("舆情风险监控系统 © 实时守护品牌声誉 | 数据动态更新")
+
+# =========================== 主函数 ===========================
+def main():
+    with st.sidebar:
+        st.title("系统导航")
+        st.markdown("---")
+        st.markdown("**首页**")
+        main_page = st.radio("主菜单", ["首页", "内部舆情风险监控", "外部舆情风险监控"], label_visibility="collapsed")
+        st.markdown("---")
+        with st.expander("**内部舆情风险监控**", expanded=False):
+            internal_subpage = st.radio("子菜单", ["数据总览", "每日舆情", "客诉查询"], label_visibility="collapsed")
+        st.markdown("---")
+        st.caption(f"更新时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    if main_page == "首页":
+        show_homepage()
+    elif main_page == "内部舆情风险监控":
+        show_internal_feedback_subpage(internal_subpage)
+    elif main_page == "外部舆情风险监控":
+        st.title("外部舆情风险监控", anchor=False)
+        st.divider()
+        show_external_feedback_dashboard()
 
 if __name__ == "__main__":
     main()
