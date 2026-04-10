@@ -75,7 +75,6 @@ PAYPAL_30D_PATH = SAVE_ROOT_PATH + "paypal_complaint_analysis_2025.xlsx"
 PAYPAL_RISK_PATH = SAVE_ROOT_PATH + "风险店铺投诉数据.xlsx"
 SHIPPING_DATA_PATH = SAVE_ROOT_PATH + "店铺风险-发货数据-4.8.xlsx"
 
-}
 RISK_THRESHOLDS = {"关键词爆发阈值": 8}
 
 DEEPSEEK_CONFIG = {
