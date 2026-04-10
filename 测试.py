@@ -1935,7 +1935,7 @@ def main():
         with st.expander("**内部舆情风险监控**", expanded=False):
             internal_subpage = st.radio("子菜单", ["数据总览", "每日舆情", "客诉查询"], label_visibility="collapsed")
         st.markdown("---")
-        st.caption(f"更新时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        st.caption(f"更新时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     if main_page == "首页":
         show_homepage()
